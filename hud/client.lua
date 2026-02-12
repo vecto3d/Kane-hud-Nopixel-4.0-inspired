@@ -1,5 +1,3 @@
-local QBCore = exports['qb-core']:GetCoreObject()
-local PlayerData = QBCore.Functions.GetPlayerData()
 local config = Config
 local speedMultiplier = config.UseMPH and 2.23694 or 3.6
 local seatbeltOn = false
@@ -65,7 +63,7 @@ local function loadSettings(settings)
             SendNUIMessage({ test = true, event = k, toggle = v })
         end
     end
-    QBCore.Functions.Notify(Lang:t('notify.hud_settings_loaded'), 'success')
+    Bridge.Notify(Lang:t('notify.hud_settings_loaded'), 'success')
     Wait(1000)
     TriggerEvent('hud:client:LoadMap')
 end
@@ -90,21 +88,20 @@ local function hasHarness(items)
     harness = _harness
 end
 
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+AddEventHandler('hud:bridge:playerLoaded', function()
     Wait(2000)
     local hudSettings = GetResourceKvpString('hudSettings')
     if hudSettings then loadSettings(json.decode(hudSettings)) end
-    PlayerData = QBCore.Functions.GetPlayerData()
     Wait(3000)
     SetEntityHealth(PlayerPedId(), 200)
 end)
 
-RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
-    PlayerData = {}
+AddEventHandler('hud:bridge:playerUnloaded', function()
+    -- Player data is handled by the bridge
 end)
 
-RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
-    PlayerData = val
+AddEventHandler('hud:bridge:playerDataUpdated', function(val)
+    -- Player data is handled by the bridge
 end)
 
 AddEventHandler('onResourceStart', function(resourceName)
@@ -126,7 +123,7 @@ RegisterCommand('menu', function()
     SetNuiFocus(true, true)
     SendNUIMessage({ action = 'open' })
     showMenu = true
-end)
+end, false)
 
 RegisterNUICallback('closeMenu', function(_, cb)
     Wait(50)
@@ -141,8 +138,8 @@ RegisterKeyMapping('menu', 'Open Menu', 'keyboard', config.OpenMenu)
 -- Reset hud
 local function restartHud()
     TriggerEvent('hud:client:playResetHudSounds')
-    QBCore.Functions.Notify(Lang:t('notify.hud_restart'), 'error')
-    if IsPedInAnyVehicle(PlayerPedId()) then
+    Bridge.Notify(Lang:t('notify.hud_restart'), 'error')
+    if IsPedInAnyVehicle(PlayerPedId(), false) then
         Wait(2600)
         SendNUIMessage({ action = 'car', show = false })
         SendNUIMessage({ action = 'car', show = true })
@@ -151,7 +148,7 @@ local function restartHud()
     SendNUIMessage({ action = 'hudtick', show = false })
     SendNUIMessage({ action = 'hudtick', show = true })
     Wait(2600)
-    QBCore.Functions.Notify(Lang:t('notify.hud_start'), 'success')
+    Bridge.Notify(Lang:t('notify.hud_start'), 'success')
 end
 
 
@@ -191,7 +188,7 @@ RegisterNetEvent('hud:client:resetStorage', function()
     if Menu.isResetSoundsChecked then
         TriggerServerEvent('InteractSound_SV:PlayOnSource', 'airwrench', 0.1)
     end
-    QBCore.Functions.TriggerCallback('hud:server:getMenu', function(menu)
+    Bridge.TriggerCallback('hud:server:getMenu', function(menu)
         loadSettings(menu); SetResourceKvp('hudSettings', json.encode(menu))
     end)
 end)
@@ -386,7 +383,7 @@ RegisterNetEvent('hud:client:LoadMap', function()
             Wait(150)
         end
         if Menu.isMapNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.load_square_map'))
+            Bridge.Notify(Lang:t('notify.load_square_map'))
         end
         SetMinimapClipType(0)
         AddReplaceTexture('platform:/textures/graphics', 'radarmasksm', 'squaremap', 'radarmasksm')
@@ -415,7 +412,7 @@ RegisterNetEvent('hud:client:LoadMap', function()
         end
         Wait(1200)
         if Menu.isMapNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.loaded_square_map'))
+            Bridge.Notify(Lang:t('notify.loaded_square_map'))
         end
     elseif Menu.isToggleMapShapeChecked == 'circle' then
         RequestStreamedTextureDict('circlemap', false)
@@ -423,7 +420,7 @@ RegisterNetEvent('hud:client:LoadMap', function()
             Wait(150)
         end
         if Menu.isMapNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.load_circle_map'))
+            Bridge.Notify(Lang:t('notify.load_circle_map'))
         end
         SetMinimapClipType(1)
         AddReplaceTexture('platform:/textures/graphics', 'radarmasksm', 'circlemap', 'radarmasksm')
@@ -452,7 +449,7 @@ RegisterNetEvent('hud:client:LoadMap', function()
         end
         Wait(1200)
         if Menu.isMapNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.loaded_circle_map'))
+            Bridge.Notify(Lang:t('notify.loaded_circle_map'))
         end
     end
 end)
@@ -550,16 +547,20 @@ RegisterNUICallback('cinematicMode', function(_, cb)
         CinematicShow(false)
         Menu.isCinematicModeChecked = false
         if Menu.isCinematicNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.cinematic_off'), 'error')
+            Bridge.Notify(Lang:t('notify.cinematic_off'), 'error')
         end
         DisplayRadar(1)
+        SendNUIMessage({ action = 'baseplate', show = true })
     else
         CinematicShow(true)
         Menu.isCinematicModeChecked = true
         if Menu.isCinematicNotifChecked then
-            QBCore.Functions.Notify(Lang:t('notify.cinematic_on'))
+            Bridge.Notify(Lang:t('notify.cinematic_on'))
         end
+        DisplayRadar(0)
+        SendNUIMessage({ action = 'baseplate', show = false })
     end
+    prevBaseplateStats = {}
     TriggerEvent('hud:client:playHudChecklistSound')
     saveSettings()
     cb('ok')
@@ -687,7 +688,7 @@ local function getFuelLevel(vehicle)
     local updateTick = GetGameTimer()
     if (updateTick - lastFuelUpdate) > 2000 then
         lastFuelUpdate = updateTick
-        lastFuelCheck = math.floor(exports['LegacyFuel']:GetFuel(vehicle))
+        lastFuelCheck = math.floor(Entity(vehicle).state.fuel or 0)
     end
     return lastFuelCheck
 end
@@ -702,7 +703,7 @@ CreateThread(function()
         else
             Wait(50)
         end
-        if LocalPlayer.state.isLoggedIn then
+        if Bridge.IsLoggedIn() then
             local show = true
             local player = PlayerPedId()
             local playerId = PlayerId()
@@ -715,11 +716,12 @@ CreateThread(function()
                     armed = false
                 end
             end
-            playerDead = IsEntityDead(player) or PlayerData.metadata['inlaststand'] or PlayerData.metadata['isdead'] or false
+            playerDead = IsEntityDead(player) or Bridge.GetPlayerMeta('inlaststand') or Bridge.GetPlayerMeta('isdead') or
+                false
             parachute = GetPedParachuteState(player)
             -- Stamina
             --if not IsEntityInWater(player) then
-                --oxygen = 100 - GetPlayerSprintStaminaRemaining(playerId)
+            --oxygen = 100 - GetPlayerSprintStaminaRemaining(playerId)
             --end
             -- Oxygen
             if IsEntityInWater(player) then
@@ -858,13 +860,13 @@ end)
 -- Low fuel
 CreateThread(function()
     while true do
-        if LocalPlayer.state.isLoggedIn then
+        if Bridge.IsLoggedIn() then
             local ped = PlayerPedId()
             if IsPedInAnyVehicle(ped, false) and not IsThisModelABicycle(GetEntityModel(GetVehiclePedIsIn(ped, false))) then
-                if exports['LegacyFuel']:GetFuel(GetVehiclePedIsIn(ped, false)) <= 20 then -- At 20% Fuel Left
+                if (Entity(GetVehiclePedIsIn(ped, false)).state.fuel or 0) <= 20 then -- At 20% Fuel Left
                     if Menu.isLowFuelChecked then
                         TriggerServerEvent('InteractSound_SV:PlayOnSource', 'pager', 0.10)
-                        QBCore.Functions.Notify(Lang:t('notify.low_fuel'), 'error')
+                        Bridge.Notify(Lang:t('notify.low_fuel'), 'error')
                         Wait(60000) -- repeats every 1 min until empty
                     end
                 end
@@ -895,8 +897,8 @@ RegisterNetEvent('hud:client:ShowAccounts', function(type, amount)
 end)
 
 RegisterNetEvent('hud:client:OnMoneyChange', function(type, amount, isMinus)
-    cashAmount = PlayerData.money['cash']
-    bankAmount = PlayerData.money['bank']
+    cashAmount = Bridge.GetPlayerMoney('cash')
+    bankAmount = Bridge.GetPlayerMoney('bank')
     SendNUIMessage({
         action = 'updatemoney',
         cash = Round(cashAmount),
@@ -915,7 +917,7 @@ CreateThread(function()
 
         local ped = PlayerPedId()
         if IsPedInAnyVehicle(ped, false) then
-            hasHarness(PlayerData.items)
+            hasHarness(Bridge.GetPlayerItems())
         end
     end
 end)
@@ -925,7 +927,7 @@ end)
 if not config.DisableStress then
     CreateThread(function() -- Speeding
         while true do
-            if LocalPlayer.state.isLoggedIn then
+            if Bridge.IsLoggedIn() then
                 local ped = PlayerPedId()
                 if IsPedInAnyVehicle(ped, false) then
                     local veh = GetVehiclePedIsIn(ped, false)
@@ -951,7 +953,7 @@ if not config.DisableStress then
 
     CreateThread(function() -- Shooting
         while true do
-            if LocalPlayer.state.isLoggedIn then
+            if Bridge.IsLoggedIn() then
                 local ped = PlayerPedId()
                 local weapon = GetSelectedPedWeapon(ped)
                 if weapon ~= `WEAPON_UNARMED` then
@@ -1002,7 +1004,8 @@ CreateThread(function()
             TriggerScreenblurFadeOut(1000.0)
 
             if not IsPedRagdoll(ped) and IsPedOnFoot(ped) and not IsPedSwimming(ped) then
-                SetPedToRagdollWithFall(ped, RagdollTimeout, RagdollTimeout, 1, GetEntityForwardVector(ped), 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                SetPedToRagdollWithFall(ped, RagdollTimeout, RagdollTimeout, 1, GetEntityForwardVector(ped), 1.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0)
             end
 
             Wait(1000)
@@ -1138,6 +1141,7 @@ CreateThread(function()
         if heading == '360' then heading = '0' end
         if heading ~= lastHeading then
             local show = IsPedInAnyVehicle(player)
+            if Menu.isCinematicModeChecked then show = false end
             local crossroads = getCrossroads(player)
             SendNUIMessage({
                 action = 'update',
@@ -1155,7 +1159,7 @@ CreateThread(function()
                 })
             else
                 updateBaseplateHud({
-                    true,
+                    not Menu.isCinematicModeChecked,
                     crossroads[1],
                     crossroads[2],
                     Menu.isCompassShowChecked,
@@ -1175,7 +1179,7 @@ Citizen.CreateThread(function()
         local vehicle = GetVehiclePedIsIn(player, false)
 
         if IsPedInAnyVehicle(player, false) and GetIsVehicleEngineRunning(vehicle) then
-        --print("is a car beu")
+            --print("is a car beu")
             local rpmlol = GetVehicleCurrentRpm(vehicle)
             local selectedgear = getSelectedGear()
             local gearlol = getinfo(selectedgear)
